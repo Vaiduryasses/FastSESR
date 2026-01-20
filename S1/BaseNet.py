@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from timm.models.layers import DropPath
 
-# --- 辅助函数 ---
 def knn_feature(x, k):
     """KNN in feature space with correct Euclidean distance formula.
     
@@ -26,12 +25,9 @@ def knn_feature(x, k):
     idx = pairwise_distance.topk(k=k, dim=-1, largest=False)[1]  # [B, K, k]
     return idx
 
-# --- Pre-Norm 风格的模块 ---
 
 class DynamicGraphAttentionBlock(nn.Module):
-    """动态图注意力块 (GNN层) - Pre-Norm 结构
-    
-    使用几何坐标空间做 KNN，避免在特征空间做 KNN 导致的训练不稳定。
+    """GNN Layer - Pre-Norm 
     """
     def __init__(self, dim, k_neighbor=8):
         super().__init__()
@@ -48,7 +44,7 @@ class DynamicGraphAttentionBlock(nn.Module):
             pos_embed: [B, K, C] position embedding
             rel_pos_coords: [B, K, 3] relative position coordinates (for stable KNN)
         """
-        # Pre-Norm: 先归一化，再注入位置信息
+        # Pre-Norm
         x_norm = self.norm(x)
         x_with_pos = x_norm + pos_embed
         
@@ -85,7 +81,7 @@ class DynamicGraphAttentionBlock(nn.Module):
         return self.drop_path(agg_feat)
 
 class SelfAttention(nn.Module):
-    """自注意力 - Pre-Norm, 并接收相对位置偏置"""
+    
     def __init__(self, dim, num_heads=4):
         super().__init__()
         self.num_heads = num_heads
@@ -97,7 +93,6 @@ class SelfAttention(nn.Module):
         self.drop_path = DropPath(0.1)
 
     def forward(self, x, pos_embed, rel_pos_bias):
-        # Pre-Norm: 先归一化，再注入位置信息
         x_norm = self.norm(x)
         x_with_pos = x_norm + pos_embed
         
@@ -107,8 +102,7 @@ class SelfAttention(nn.Module):
         
         attn = (q @ k.transpose(-2, -1)) * self.scale
         
-        # 核心优化1: 注入相对位置偏置
-        # rel_pos_bias 形状 [B, K, K], 需要扩展到 [B, num_heads, K, K]
+        # rel_pos_bias [B, K, K]
         attn = attn + rel_pos_bias.unsqueeze(1)
         
         attn = attn.softmax(dim=-1)
@@ -117,7 +111,6 @@ class SelfAttention(nn.Module):
         return self.drop_path(out)
 
 class FeedForward(nn.Module):
-    """前馈网络 - Pre-Norm"""
     def __init__(self, dim, hidden_dim):
         super().__init__()
         self.norm = nn.LayerNorm(dim) # Pre-Norm
@@ -130,7 +123,6 @@ class FeedForward(nn.Module):
         return self.drop_path(self.net(self.norm(x)))
 
 class TransGNNBlock(nn.Module):
-    """交错块 - 采用 Pre-Norm 结构"""
     def __init__(self, dim, k_neighbor=8, num_heads=4, ff_dim_multiplier=4):
         super().__init__()
         self.gnn_layer = DynamicGraphAttentionBlock(dim, k_neighbor)
@@ -145,7 +137,6 @@ class TransGNNBlock(nn.Module):
             rel_pos_bias: [B, K, K] relative position bias
             rel_pos_coords: [B, K, 3] relative position coordinates (for stable KNN in GNN)
         """
-        # 核心优化2: Pre-Norm 结构
         # Pass rel_pos_coords to GNN for stable geometric KNN
         x = x + self.gnn_layer(x, pos_embed, rel_pos_coords)
         x = x + self.attn_layer(x, pos_embed, rel_pos_bias)
@@ -153,7 +144,7 @@ class TransGNNBlock(nn.Module):
         return x
 
 class S1BaseNet(nn.Module):
-    """TransGNN V4 with Edge-Factorized Parameterization: S_jk = s0_j + s0_k + s_jk
+    """TransGNN  with Edge-Factorized Parameterization: S_jk = s0_j + s0_k + s_jk
     
     Version 1: Analytic sjk (pair_alpha, pair_bias)
     Version 2: Learnable low-rank sjk (use_pair_lowrank=True, pair_rank)
@@ -180,7 +171,6 @@ class S1BaseNet(nn.Module):
         self.input_proj = nn.Linear(Cin, embed_dim)
         self.pos_embed = nn.Linear(3, embed_dim)
         
-        # 用于生成相对位置偏置的小型网络
         self.rel_pos_bias_mlp = nn.Sequential(
             nn.Linear(3, embed_dim), nn.ReLU(), nn.Linear(embed_dim, 1)
         )
@@ -206,7 +196,6 @@ class S1BaseNet(nn.Module):
             if self.use_pair_lowrank:
                 self.pair_u = nn.Linear(embed_dim, pair_rank, bias=False)
                 self.pair_scale = 1.0 / (pair_rank ** 0.5)
-                # 给 lowrank 分支单独的 alpha/bias（确保开启 lowrank 时它们会训练）
                 self.pair_alpha_lr = nn.Parameter(torch.tensor(1.0, dtype=torch.float32))
                 self.pair_bias_lr = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         else:
@@ -222,7 +211,6 @@ class S1BaseNet(nn.Module):
         x = self.input_proj(in_feats)
         pos_embedding = self.pos_embed(rel_pos_coords)
 
-        # 计算相对位置矩阵并生成偏置
         p_i = rel_pos_coords.unsqueeze(2) # [B, K, 1, 3]
         p_j = rel_pos_coords.unsqueeze(1) # [B, 1, K, 3]
         rel_pos_matrix = p_i - p_j        # [B, K, K, 3]
@@ -285,49 +273,49 @@ if __name__ == '__main__':
     N, K, C = 4, 50, 99
     
     print("=" * 60)
-    print("测试 Edge-Factorized Parameterization")
+    print("Test Edge-Factorized Parameterization")
     print("=" * 60)
     
     # Test Version 1: Analytic sjk
-    print("\n--- Version 1: Analytic sjk (解析几何) ---")
+    print("\n--- Version 1: Analytic sjk ---")
     model_v1 = S1BaseNet(Cin=C, knn=K, num_blocks=5, use_edge_factorized=True, 
                           use_pair_lowrank=False, pair_alpha=10.0)
     num_params_v1 = sum(p.numel() for p in model_v1.parameters() if p.requires_grad)
-    print(f"参数量: {num_params_v1 / 1e6:.2f} M")
+    print(f"params: {num_params_v1 / 1e6:.2f} M")
     
     input_tensor = torch.randn(N, K, C)
     logits_v1 = model_v1(input_tensor)
-    print(f"输入: {input_tensor.shape} -> 输出: {logits_v1.shape}")
+    print(f"input: {input_tensor.shape} -> output: {logits_v1.shape}")
     assert logits_v1.shape == (N, (K-1)**2), f"Expected {(N, (K-1)**2)}, got {logits_v1.shape}"
-    print("✓ Version 1 测试通过")
+    print("✓ Version 1")
     
     # Test Version 2: Learnable low-rank sjk
-    print("\n--- Version 2: Learnable low-rank sjk (可学习低秩) ---")
+    print("\n--- Version 2: Learnable low-rank sjk ---")
     model_v2 = S1BaseNet(Cin=C, knn=K, num_blocks=5, use_edge_factorized=True,
                           use_pair_lowrank=True, pair_rank=32)
     num_params_v2 = sum(p.numel() for p in model_v2.parameters() if p.requires_grad)
-    print(f"参数量: {num_params_v2 / 1e6:.2f} M")
+    print(f"params: {num_params_v2 / 1e6:.2f} M")
     
     logits_v2 = model_v2(input_tensor)
-    print(f"输入: {input_tensor.shape} -> 输出: {logits_v2.shape}")
+    print(f"input: {input_tensor.shape} -> output: {logits_v2.shape}")
     assert logits_v2.shape == (N, (K-1)**2), f"Expected {(N, (K-1)**2)}, got {logits_v2.shape}"
-    print("✓ Version 2 测试通过")
+    print("✓ Version 2 ")
     
     # Test Original (for comparison)
-    print("\n--- Original: Direct parameterization (对比) ---")
+    print("\n--- Original: Direct parameterization ---")
     model_orig = S1BaseNet(Cin=C, knn=K, num_blocks=5, use_edge_factorized=False)
     num_params_orig = sum(p.numel() for p in model_orig.parameters() if p.requires_grad)
-    print(f"参数量: {num_params_orig / 1e6:.2f} M")
+    print(f"params: {num_params_orig / 1e6:.2f} M")
     
     logits_orig = model_orig(input_tensor)
-    print(f"输入: {input_tensor.shape} -> 输出: {logits_orig.shape}")
+    print(f"input: {input_tensor.shape} -> output: {logits_orig.shape}")
     assert logits_orig.shape == (N, (K-1)**2), f"Expected {(N, (K-1)**2)}, got {logits_orig.shape}"
-    print("✓ Original 测试通过")
+    print("✓ Original")
     
     print("\n" + "=" * 60)
-    print("参数对比:")
+    print("params comparison:")
     print(f"  Original:     {num_params_orig / 1e6:.2f} M")
-    print(f"  Edge-Factor V1: {num_params_v1 / 1e6:.2f} M (减少 {((num_params_orig - num_params_v1) / num_params_orig * 100):.1f}%)")
-    print(f"  Edge-Factor V2: {num_params_v2 / 1e6:.2f} M (减少 {((num_params_orig - num_params_v2) / num_params_orig * 100):.1f}%)")
+    print(f"  Edge-Factor V1: {num_params_v1 / 1e6:.2f} M (decrease {((num_params_orig - num_params_v1) / num_params_orig * 100):.1f}%)")
+    print(f"  Edge-Factor V2: {num_params_v2 / 1e6:.2f} M (decrease {((num_params_orig - num_params_v2) / num_params_orig * 100):.1f}%)")
     print("=" * 60)
-    print("\n所有测试通过！✓")
+    print("\nall test pass！✓")

@@ -1,8 +1,8 @@
 # FastSESR: Fast Surface Extraction and Super-Resolution
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.8+-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/PyTorch-1.10+-orange.svg" alt="PyTorch">
+  <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/PyTorch-2.6.0+-orange.svg" alt="PyTorch">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 

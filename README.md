@@ -1,4 +1,4 @@
-# FastSESR: Fast Surface Extraction and Super-Resolution
+# FastSESR: ast Scene-level Explicit Surface Reconstruction
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">

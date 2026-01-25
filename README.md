@@ -31,7 +31,7 @@ conda activate fastsesr
 
 ### 2. Install PyTorch
 
-Install PyTorch according to your CUDA version (PyTorch 1.10+ recommended):
+Install PyTorch according to your CUDA version (PyTorch 2.6.0+ recommended):
 
 ```bash
 # CUDA 11.8

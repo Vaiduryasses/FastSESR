@@ -434,8 +434,3 @@ FastSESR/
 
 This project is based on the work of [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) (CVPR 2025). We thank the authors for providing the datasets and baseline implementation.
 
-
-
-## 📄 License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

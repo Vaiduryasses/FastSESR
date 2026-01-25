@@ -3,7 +3,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.6.0+-orange.svg" alt="PyTorch">
-  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 
 FastSESR is a deep learning-based point cloud surface reconstruction framework that employs a two-stage (S1/S2) training strategy to achieve efficient mesh reconstruction from point clouds. The project supports multiple datasets and provides complete training, evaluation, and reconstruction pipelines.

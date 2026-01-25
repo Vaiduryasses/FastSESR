@@ -6,56 +6,56 @@
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
 </p>
 
-FastSESR 是一个基于深度学习的点云曲面重建框架，采用两阶段（S1/S2）训练策略，实现从点云到三角网格的高效重建。项目支持多种数据集，并提供完整的训练、评估和重建流程。
+FastSESR is a deep learning-based point cloud surface reconstruction framework that employs a two-stage (S1/S2) training strategy to achieve efficient mesh reconstruction from point clouds. The project supports multiple datasets and provides complete training, evaluation, and reconstruction pipelines.
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [环境配置](#-环境配置)
-- [依赖库](#-依赖库)
-- [数据集准备](#-数据集准备)
-- [Stage 1 训练](#-stage-1-训练)
-- [Stage 2 训练](#-stage-2-训练)
-- [预训练模型](#-预训练模型)
-- [重建与评估](#-重建与评估)
-- [项目结构](#-项目结构)
+- [Environment Setup](#-environment-setup)
+- [Dependencies](#-dependencies)
+- [Dataset Preparation](#-dataset-preparation)
+- [Stage 1 Training](#-stage-1-training)
+- [Stage 2 Training](#-stage-2-training)
+- [Pre-trained Models](#-pre-trained-models)
+- [Reconstruction & Evaluation](#-reconstruction--evaluation)
+- [Project Structure](#-project-structure)
 
 ---
 
-## 🛠 环境配置
+## 🛠 Environment Setup
 
-### 1. 创建 Conda 虚拟环境
+### 1. Create Conda Virtual Environment
 
 ```bash
 conda create -n fastsesr python=3.8
 conda activate fastsesr
 ```
 
-### 2. 安装 PyTorch
+### 2. Install PyTorch
 
-根据您的CUDA版本安装PyTorch（推荐 PyTorch 1.10+）：
+Install PyTorch according to your CUDA version (PyTorch 1.10+ recommended):
 
 ```bash
 # CUDA 11.3
 conda install pytorch==1.12.0 torchvision==0.13.0 torchaudio==0.12.0 cudatoolkit=11.3 -c pytorch
 
-# 或使用 pip
+# Or using pip
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu113
 ```
 
-### 3. 安装 PyTorch3D
+### 3. Install PyTorch3D
 
-PyTorch3D 用于 LOON-UNet 的 kNN 操作和 Chamfer 距离计算：
+PyTorch3D is required for LOON-UNet's kNN operations and Chamfer distance computation:
 
 ```bash
-# 使用 conda (推荐)
+# Using conda (recommended)
 conda install -c fvcore -c iopath -c conda-forge fvcore iopath
 conda install pytorch3d -c pytorch3d
 
-# 或从源码安装
+# Or install from source
 pip install "git+https://github.com/facebookresearch/pytorch3d.git"
 ```
 
-### 4. 安装其他依赖
+### 4. Install Other Dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -63,21 +63,21 @@ pip install -r requirements.txt
 
 ---
 
-## 📦 依赖库
+## 📦 Dependencies
 
-项目所需的主要依赖库如下：
+The main dependencies required for this project are listed below:
 
-| 库名称 | 用途 | 最低版本 |
-|--------|------|----------|
-| `torch` | 深度学习框架 | 1.10+ |
-| `pytorch3d` | 3D操作（kNN, FPS, Chamfer距离） | 0.6+ |
-| `open3d` | 点云/网格IO与可视化 | 0.15+ |
-| `numpy` | 数值计算 | 1.20+ |
-| `tqdm` | 进度条显示 | 4.60+ |
-| `timm` | 预训练模型组件（DropPath等） | 0.5+ |
-| `wandb` | 训练日志记录 | 0.12+ |
+| Library | Purpose | Minimum Version |
+|---------|---------|-----------------|
+| `torch` | Deep learning framework | 1.10+ |
+| `pytorch3d` | 3D operations (kNN, FPS, Chamfer distance) | 0.6+ |
+| `open3d` | Point cloud/mesh I/O and visualization | 0.15+ |
+| `numpy` | Numerical computation | 1.20+ |
+| `tqdm` | Progress bar display | 4.60+ |
+| `timm` | Pre-trained model components (DropPath, etc.) | 0.5+ |
+| `wandb` | Training log recording | 0.12+ |
 
-创建 `requirements.txt` 文件：
+Create a `requirements.txt` file:
 
 ```txt
 torch>=1.10.0
@@ -91,46 +91,50 @@ scipy
 
 ---
 
-## 📁 数据集准备
+## 📁 Dataset Preparation
 
-### 数据集目录结构
+### Dataset Directory Structure
 
-项目期望的数据目录结构如下：
+The expected data directory structure is as follows:
 
 ```
 Data/
 ├── ABC/
-│   ├── train/                    # ABC 训练集 (PLY 格式)
+│   ├── train/                    # ABC training set (PLY format)
 │   │   ├── 00000001.ply
 │   │   ├── 00000002.ply
 │   │   └── ...
-│   └── test/                     # ABC 测试集
+│   └── test/                     # ABC test set
 │       ├── 00000501.ply
 │       └── ...
 ├── PointClouds/
-│   ├── FAUST/                    # FAUST 数据集点云
+│   ├── FAUST/                    # FAUST dataset point clouds
 │   │   ├── tr_reg_000.ply
 │   │   └── ...
-│   ├── MGN/                      # MGN 数据集点云
-│   └── <其他数据集>/
+│   ├── MGN/                      # MGN dataset point clouds
+│   └── <other_datasets>/
 └── GT_Meshes/
-    ├── FAUST/                    # FAUST Ground Truth 网格
+    ├── FAUST/                    # FAUST Ground Truth meshes
     │   ├── tr_reg_000.ply
     │   └── ...
-    └── <其他数据集>/
+    └── <other_datasets>/
 ```
 
-### 数据集获取
+### Dataset Download
 
-| 数据集 | 描述 | 下载链接 |
-|--------|------|----------|
-| **ABC** | CAD模型数据集，用于 S1 训练 | [ABC Dataset](https://deep-geometry.github.io/abc-dataset/) |
-| **FAUST** | 人体扫描数据集 | [FAUST Dataset](https://faust.is.tue.mpg.de/) |
-| **MGN** | 多服装人体数据集 | [MGN Dataset](https://virtualhumans.mpi-inf.mpg.de/mgn/) |
+The pre-processed datasets can be obtained from the [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) repository (CVPR 2025).
 
-### 数据预处理
+| Dataset | Description | Source |
+|---------|-------------|--------|
+| **ABC** | CAD model dataset for S1 training | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
+| **FAUST** | Human body scan dataset | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
+| **MGN** | Multi-garment human dataset | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
 
-确保所有点云文件为 `.ply` 格式。如需转换，可使用 Open3D：
+Please refer to the OffsetOPT repository for detailed download instructions and data preparation guidelines.
+
+### Data Preprocessing
+
+Ensure all point cloud files are in `.ply` format. For format conversion, you can use Open3D:
 
 ```python
 import open3d as o3d
@@ -142,11 +146,11 @@ o3d.io.write_point_cloud("output.ply", pcd)
 
 ---
 
-## 🎯 Stage 1 训练
+## 🎯 Stage 1 Training
 
-Stage 1 使用 ABC 数据集训练基础三角分类网络。
+Stage 1 trains the base triangle classification network using the ABC dataset.
 
-### 训练命令
+### Training Command
 
 ```bash
 python S1_train.py \
@@ -158,31 +162,31 @@ python S1_train.py \
     --pair_bias 0.0
 ```
 
-### 参数说明
+### Parameter Description
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `--gpu` | 0 | 使用的 GPU 编号 |
-| `--max_epoch` | 301 | 最大训练轮数 |
-| `--ckpt_path` | None | 恢复训练的检查点路径 |
-| `--use_pair_lowrank` | 0 | 是否使用低秩对偶分解 (0/1) |
-| `--pair_rank` | 32 | 低秩分解的秩 |
-| `--pair_alpha` | 0.5 | pair_alpha 初始值 |
-| `--pair_bias` | 0.0 | pair_bias 初始值 |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--gpu` | 0 | GPU device ID |
+| `--max_epoch` | 301 | Maximum number of training epochs |
+| `--ckpt_path` | None | Checkpoint path to resume training |
+| `--use_pair_lowrank` | 0 | Whether to use low-rank pair decomposition (0/1) |
+| `--pair_rank` | 32 | Rank for low-rank decomposition |
+| `--pair_alpha` | 0.5 | Initial pair_alpha value |
+| `--pair_bias` | 0.0 | Initial pair_bias value |
 
-### 训练输出
+### Training Output
 
-训练模型和日志保存在：
+Trained models and logs are saved in:
 
 ```
 S1_training/
 └── model_k50/
-    ├── log_train.txt           # 训练日志
-    ├── best_model              # 最佳模型检查点
-    └── ckpt_epoch_*.pth        # 各轮次检查点
+    ├── log_train.txt           # Training log
+    ├── best_model              # Best model checkpoint
+    └── ckpt_epoch_*.pth        # Epoch checkpoints
 ```
 
-### 从检查点恢复训练
+### Resume Training from Checkpoint
 
 ```bash
 python S1_train.py \
@@ -193,15 +197,15 @@ python S1_train.py \
 
 ---
 
-## 🚀 Stage 2 训练
+## 🚀 Stage 2 Training
 
-Stage 2 使用 LOON-UNet 进行多尺度偏移量学习。
+Stage 2 uses LOON-UNet for multi-scale offset learning.
 
-### 数据集划分
+### Dataset Splitting
 
-#### Step 1: 生成固定划分配置
+#### Step 1: Generate Fixed Split Configurations
 
-使用 `generate_fixed_splits.py` 生成可复现的 K-fold 划分：
+Use `generate_fixed_splits.py` to generate reproducible K-fold splits:
 
 ```bash
 python scripts/generate_fixed_splits.py \
@@ -211,15 +215,15 @@ python scripts/generate_fixed_splits.py \
     --seeds 202401 202402 202403
 ```
 
-这将在 `splits/<dataset>/` 目录下生成划分配置文件。
+This will generate split configuration files under the `splits/<dataset>/` directory.
 
-#### Step 2: 将 JSON 划分转换为文件列表
+#### Step 2: Convert JSON Splits to File Lists
 
 ```bash
 python scripts/convert_json_splits_to_kfold_lists.py --dataset FAUST
 ```
 
-生成的目录结构：
+Generated directory structure:
 
 ```
 splits/
@@ -234,7 +238,7 @@ splits/
     └── ...
 ```
 
-### K-Fold 交叉验证训练
+### K-Fold Cross-Validation Training
 
 ```bash
 python scripts/kfold_runner.py \
@@ -247,22 +251,22 @@ python scripts/kfold_runner.py \
     --chunk_size 2000
 ```
 
-#### 参数说明
+#### Parameter Description
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `--dataset` | (必需) | 数据集名称 (如 FAUST, MGN) |
-| `--data_root` | (必需) | 数据根目录 |
-| `--epochs` | 30 | 每个 fold 的训练轮数 |
-| `--gpu` | 0 | GPU 编号 |
-| `--splits_root` | splits | 划分配置目录 |
-| `--chunk_size` | 2000 | 分块大小（降低显存占用） |
-| `--use_loon_unet` | False | 重建时使用 LOON-UNet |
-| `--resume` | False | 跳过已完成的 fold |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--dataset` | (required) | Dataset name (e.g., FAUST, MGN) |
+| `--data_root` | (required) | Data root directory |
+| `--epochs` | 30 | Training epochs per fold |
+| `--gpu` | 0 | GPU device ID |
+| `--splits_root` | splits | Split configuration directory |
+| `--chunk_size` | 2000 | Chunk size (reduces memory usage) |
+| `--use_loon_unet` | False | Use LOON-UNet for reconstruction |
+| `--resume` | False | Skip completed folds |
 
-### LOSO (Leave-One-Subject-Out) 训练
+### LOSO (Leave-One-Subject-Out) Training
 
-适用于需要留一验证的场景：
+Suitable for scenarios requiring leave-one-out validation:
 
 ```bash
 python scripts/loso_runner.py \
@@ -273,9 +277,9 @@ python scripts/loso_runner.py \
     --val_ratio 0.2
 ```
 
-### 直接使用 S2_train_loon_unet.py 训练
+### Direct Training with S2_train_loon_unet.py
 
-对于 ABC 数据集或自定义训练，可直接调用训练脚本：
+For the ABC dataset or custom training, you can directly call the training script:
 
 ```bash
 python S2/S2_train_loon_unet.py \
@@ -290,66 +294,66 @@ python S2/S2_train_loon_unet.py \
     --save_dir runs/ABC_train
 ```
 
-#### 完整参数列表
+#### Full Parameter List
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `--dataset` | (必需) | 数据集名称 |
-| `--data_root` | Data | 数据根目录 |
-| `--train_list` | "" | 训练样本列表文件 |
-| `--val_list` | "" | 验证样本列表文件 |
-| `--test_list` | "" | 测试样本列表文件 |
-| `--split_config` | "" | JSON 格式的划分配置文件 |
-| `--epochs` | 30 | 训练轮数 |
-| `--batch_size` | 1 | 批次大小 |
-| `--lr` | 0.001 | 学习率 |
-| `--weight_decay` | 0.0 | 权重衰减 |
-| `--gpu` | 0 | GPU 编号 |
-| `--seed` | 42 | 随机种子 |
-| `--delta` | 0.0 | 表面体素大小 |
-| `--rescale_delta` | False | 是否根据模型尺度缩放 delta |
-| `--unet_k` | 16 | DGCNN 编码器 K 近邻数 |
-| `--unet_hidden` | 64 | 瓶颈层隐藏维度 |
-| `--unet_T` | 3 | LOON 迭代步数 |
-| `--unet_K` | 50 | 三角网络 KNN 数 |
-| `--save_dir` | "" | 模型保存目录 |
-| `--amp` | False | 启用混合精度训练 |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--dataset` | (required) | Dataset name |
+| `--data_root` | Data | Data root directory |
+| `--train_list` | "" | Training sample list file |
+| `--val_list` | "" | Validation sample list file |
+| `--test_list` | "" | Test sample list file |
+| `--split_config` | "" | JSON format split configuration file |
+| `--epochs` | 30 | Number of training epochs |
+| `--batch_size` | 1 | Batch size |
+| `--lr` | 0.001 | Learning rate |
+| `--weight_decay` | 0.0 | Weight decay |
+| `--gpu` | 0 | GPU device ID |
+| `--seed` | 42 | Random seed |
+| `--delta` | 0.0 | Surface voxel size |
+| `--rescale_delta` | False | Whether to rescale delta based on model scale |
+| `--unet_k` | 16 | DGCNN encoder K nearest neighbors |
+| `--unet_hidden` | 64 | Bottleneck hidden dimension |
+| `--unet_T` | 3 | LOON iteration steps |
+| `--unet_K` | 50 | Triangle network KNN count |
+| `--save_dir` | "" | Model save directory |
+| `--amp` | False | Enable mixed precision training |
 
 ---
 
-## 💾 预训练模型
+## 💾 Pre-trained Models
 
-预训练的 Stage 1 模型保存在 `trained_models/` 目录：
+Pre-trained Stage 1 models are saved in the `trained_models/` directory:
 
 ```
 trained_models/
-└── model_knn50.pth              # KNN=50 的预训练模型
+└── model_knn50.pth              # Pre-trained model with KNN=50
 ```
 
-### 模型加载
+### Model Loading
 
-Stage 2 训练会自动从 `trained_models/model_knn{K}.pth` 加载预训练权重。确保该文件存在：
+Stage 2 training will automatically load pre-trained weights from `trained_models/model_knn{K}.pth`. Ensure this file exists:
 
 ```python
-# 检查预训练模型
+# Check pre-trained model
 import os
-assert os.path.exists('trained_models/model_knn50.pth'), "预训练模型不存在!"
+assert os.path.exists('trained_models/model_knn50.pth'), "Pre-trained model not found!"
 ```
 
-### 使用自训练的 S1 模型
+### Using Self-trained S1 Model
 
-如果使用自己训练的 S1 模型，S2 会自动查找 `S1_training/model_k{knn}/best_model`：
+If using your own trained S1 model, S2 will automatically look for `S1_training/model_k{knn}/best_model`:
 
 ```bash
-# S1 训练完成后，模型位于
+# After S1 training completes, the model is located at
 S1_training/model_k50/best_model
 ```
 
 ---
 
-## 🔍 重建与评估
+## 🔍 Reconstruction & Evaluation
 
-### 使用 LOON-UNet 重建
+### Reconstruction with LOON-UNet
 
 ```bash
 python S2_reconstruct.py \
@@ -362,7 +366,7 @@ python S2_reconstruct.py \
     --out_dir results/FAUST
 ```
 
-### 使用 OffsetOPT 重建 (传统方法)
+### Reconstruction with OffsetOPT (Traditional Method)
 
 ```bash
 python S2_reconstruct.py \
@@ -372,7 +376,7 @@ python S2_reconstruct.py \
     --out_dir results/ABC
 ```
 
-### 评估重建质量
+### Evaluate Reconstruction Quality
 
 ```bash
 python main_eval_acc.py \
@@ -381,7 +385,7 @@ python main_eval_acc.py \
     --sample_num 100000
 ```
 
-### 批量评估多个 fold
+### Batch Evaluation for Multiple Folds
 
 ```bash
 python scripts/eval_multi.py \
@@ -392,58 +396,50 @@ python scripts/eval_multi.py \
 
 ---
 
-## 📂 项目结构
+## 📂 Project Structure
 
 ```
 FastSESR/
-├── S1/                           # Stage 1 模块
-│   ├── BaseNet.py                # S1 基础网络（DGCNN + GNN）
-│   ├── loss_supervised.py        # 监督损失函数
-│   └── fitModel.py               # 训练工具类
-├── S2/                           # Stage 2 模块
-│   ├── LoonUNet.py               # LOON-UNet 网络架构
-│   ├── ReconNet.py               # 重建网络（继承自 S1）
-│   ├── ExtractFace.py            # 三角面片提取
-│   ├── offset_opt.py             # 偏移量优化器
-│   ├── loss_unsupervised.py      # 无监督损失
-│   └── S2_train_loon_unet.py     # S2 训练脚本
-├── dataset/                      # 数据集加载器
-│   ├── mesh_train.py             # 网格训练数据集
-│   ├── pc_recon.py               # 点云重建数据集
-│   └── pc_recon_with_gt.py       # 带 GT 的点云数据集
-├── scripts/                      # 实用脚本
-│   ├── generate_fixed_splits.py  # 生成划分配置
-│   ├── convert_json_splits_to_kfold_lists.py  # 转换划分格式
-│   ├── kfold_runner.py           # K-fold 训练编排
-│   ├── loso_runner.py            # LOSO 训练编排
-│   └── eval_multi.py             # 批量评估
-├── trained_models/               # 预训练模型
+├── S1/                           # Stage 1 modules
+│   ├── BaseNet.py                # S1 base network (DGCNN + GNN)
+│   ├── loss_supervised.py        # Supervised loss function
+│   └── fitModel.py               # Training utility class
+├── S2/                           # Stage 2 modules
+│   ├── LoonUNet.py               # LOON-UNet network architecture
+│   ├── ReconNet.py               # Reconstruction network (inherits from S1)
+│   ├── ExtractFace.py            # Triangle face extraction
+│   ├── offset_opt.py             # Offset optimizer
+│   ├── loss_unsupervised.py      # Unsupervised loss
+│   └── S2_train_loon_unet.py     # S2 training script
+├── dataset/                      # Dataset loaders
+│   ├── mesh_train.py             # Mesh training dataset
+│   ├── pc_recon.py               # Point cloud reconstruction dataset
+│   └── pc_recon_with_gt.py       # Point cloud dataset with GT
+├── scripts/                      # Utility scripts
+│   ├── generate_fixed_splits.py  # Generate split configurations
+│   ├── convert_json_splits_to_kfold_lists.py  # Convert split format
+│   ├── kfold_runner.py           # K-fold training orchestration
+│   ├── loso_runner.py            # LOSO training orchestration
+│   └── eval_multi.py             # Batch evaluation
+├── trained_models/               # Pre-trained models
 │   └── model_knn50.pth
-├── utils/                        # 工具函数
-│   └── augmentor.py              # 数据增强
-├── eval/                         # 评估工具
-├── S1_train.py                   # Stage 1 训练入口
-├── S2_reconstruct.py             # 重建入口
-├── main_eval_acc.py              # 评估入口
+├── utils/                        # Utility functions
+│   └── augmentor.py              # Data augmentation
+├── eval/                         # Evaluation tools
+├── S1_train.py                   # Stage 1 training entry
+├── S2_reconstruct.py             # Reconstruction entry
+├── main_eval_acc.py              # Evaluation entry
 └── README.md
 ```
 
 ---
 
-## 📝 引用
+## 🙏 Acknowledgements
 
-如果您使用了本项目，请引用：
+This project is based on the work of [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) (CVPR 2025). We thank the authors for providing the datasets and baseline implementation.
 
-```bibtex
-@article{fastsesr2024,
-  title={FastSESR: Fast Surface Extraction and Super-Resolution},
-  author={Your Name},
-  year={2024}
-}
-```
 
----
 
 ## 📄 License
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

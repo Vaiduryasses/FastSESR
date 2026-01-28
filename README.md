@@ -93,7 +93,7 @@ The pre-processed datasets can be obtained from the [OffsetOPT](https://github.c
 Please refer to the OffsetOPT repository for detailed download instructions and data preparation guidelines. Note that you should replace CARLA with CARLA_1M in GT_Meshes
 
 ---
-## 🚀Training
+## 🚀 Training
 ### Triangle Candidate Network (TCN)
 
 We train TCN with the ABC dataset:

@@ -94,7 +94,7 @@ Please refer to the OffsetOPT repository for detailed download instructions and 
 
 ---
 ## 🚀 Training
-### Triangle Candidate Network (TCN)
+### 1.Triangle Candidate Network (TCN)
 
 We train TCN with the ABC dataset:
 
@@ -116,12 +116,12 @@ S1_training/
 ```
 ---
 
-### Offset Optimization Network (OON)
+### 2.Offset Optimization Network (OON)
 
 
-### Dataset Splitting
+#### Dataset Splitting
 
-#### Step 1: Generate Fixed Split Configurations
+##### Step 1: Generate Fixed Split Configurations
 
 Use `generate_fixed_splits.py` to generate reproducible K-fold splits:
 
@@ -131,7 +131,7 @@ python scripts/generate_fixed_splits.py  --data_root ./Data --datasets DATASET
 
 This will generate split configuration files under the `splits/<dataset>/` directory.
 
-#### Step 2: Convert JSON Splits to File Lists
+##### Step 2: Convert JSON Splits to File Lists
 
 ```bash
 python scripts/convert_json_splits_to_kfold_lists.py --dataset DATASET
@@ -152,7 +152,7 @@ splits/
     └── ...
 ```
 
-### K-Fold Cross-Validation Training
+#### K-Fold Cross-Validation Training
 
 
 ```bash

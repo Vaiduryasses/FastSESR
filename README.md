@@ -21,7 +21,6 @@ FastSESR is a deep learning-based point cloud surface reconstruction framework t
 ---
 
 ## 🛠 Environment Setup
-
 ### 1. Create Conda Virtual Environment
 
 ```bash
@@ -31,7 +30,7 @@ conda activate fastsesr
 
 ### 2. Install PyTorch
 
-Install PyTorch according to your CUDA version (PyTorch 2.6.0+ recommended):
+Install PyTorch according to your CUDA version (PyTorch 2.6.0+ recommended). We use cuda 11.8 with Pytorch 2.6.0:
 
 ```bash
 # CUDA 11.8
@@ -55,34 +54,6 @@ pip install "git+https://github.com/facebookresearch/pytorch3d.git"
 
 ```bash
 pip install -r requirements.txt
-```
-
----
-
-## 📦 Dependencies
-
-The main dependencies required for this project are listed below:
-
-| Library | Purpose | Minimum Version |
-|---------|---------|-----------------|
-| `torch` | Deep learning framework | 1.10+ |
-| `pytorch3d` | 3D operations (kNN, FPS, Chamfer distance) | 0.6+ |
-| `open3d` | Point cloud/mesh I/O and visualization | 0.15+ |
-| `numpy` | Numerical computation | 1.20+ |
-| `tqdm` | Progress bar display | 4.60+ |
-| `timm` | Pre-trained model components (DropPath, etc.) | 0.5+ |
-| `wandb` | Training log recording | 0.12+ |
-
-Create a `requirements.txt` file:
-
-```txt
-torch>=1.10.0
-numpy>=1.20.0
-open3d>=0.15.0
-tqdm>=4.60.0
-timm>=0.5.0
-wandb>=0.12.0
-scipy
 ```
 
 ---

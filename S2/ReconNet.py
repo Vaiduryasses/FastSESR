@@ -10,17 +10,12 @@ class S2ReconNet(S1BaseNet):
                  use_pair_lowrank=True, pair_rank=32,
                  # Model architecture parameters
                  embed_dim=64):
-        # Initialize S1 backbone with edge-factorized support
-        # Note: embed_dim=64 to match existing checkpoints (trained with embed_dim=64)
-        # If you have checkpoints trained with embed_dim=128, change this to 128
         super().__init__(Cin, knn, embed_dim=embed_dim,
                         use_edge_factorized=use_edge_factorized,
                         pair_alpha=pair_alpha, pair_bias=pair_bias,
                         use_pair_lowrank=use_pair_lowrank, pair_rank=pair_rank)
         self.Lembed = Lembed
         self.resolution = 0.01
-        # Use smaller row tiles to lower peak memory in triangle head
-        # You can tune this depending on GPU memory; None means full K-1 at once.
         self.tile_rows = 16
         # Optionally load Stage-1 best checkpoint into this network
         if load_best:

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """Train LOON-UNet with Chamfer-distance validation and deterministic splits."""
 
 from __future__ import annotations
@@ -422,7 +422,6 @@ def build_model(args: argparse.Namespace, device: torch.device, project_root: Pa
         mod_unet = importlib.import_module("LoonUNet")
     DGCNNEncoder = getattr(mod_unet, "DGCNNEncoder")
     LoonBottleneck = getattr(mod_unet, "LoonBottleneck")
-    # DecoderHead is no longer used inside LoonUNet (fp10 acts as decoder)
     LoonUNet = getattr(mod_unet, "LoonUNet")
 
     try:
@@ -456,7 +455,6 @@ def build_model(args: argparse.Namespace, device: torch.device, project_root: Pa
     for param in triangle.parameters():
         param.requires_grad_(False)
 
-    # LoonUNet no longer accepts decoder head; pass encoder, bottleneck, triangle
     model = LoonUNet(encoder, bottleneck, triangle).to(device)
     return model, load_report
 
@@ -521,82 +519,86 @@ def run_step(
         with autocast_ctx:
             unsup_val = None
             if train and getattr(args, "unsup", False):
-                # 无监督训练：模型前向仅返回 offsets；随后用冻结的 tri_net 计算 logits 并构造伪标签做 BCE
                 if _p3d_knn_points is None or _p3d_knn_gather is None:
-                    raise ImportError("pytorch3d.ops (knn_points/knn_gather) 未安装，无法计算无监督三角损失。")
+                    raise ImportError("don't find pytorch3d.ops (knn_points/knn_gather) , can't compute unsupervised loss")
 
-                # 1) 在 P3 上做 FPS，再通过多层索引映射回 P0，得到 sel
                 # P0_b3n: [B,3,N]
                 P0_bn3 = P0_b3n.permute(0, 2, 1).contiguous()  # [B,N,3]
                 _, N, _ = P0_bn3.shape
                 max_points = int(getattr(args, "unsup_max_points", 10000))
 
-                # 若 P0 点数不超过上限，则不做任何子采样，直接用全部点参与无监督损失
                 if max_points <= 0 or N <= max_points:
                     sel = torch.arange(N, device=P0_bn3.device)
                 else:
-                    # N > max_points: 根据开关选择在 P0 还是 P3 上做 FPS
-                    if bool(getattr(args, "unsup_fps_on_p3", False)):
-                        # 在 P3 上做 FPS，再映射回 P0
-                        with torch.no_grad():
-                            enc = getattr(model, "enc", None)
-                            if enc is None:
-                                raise RuntimeError("model 没有 enc 编码器，无法在 P3 上做采样。")
+                    use_p2 = bool(getattr(model, "no_pyramid", False))
+                    with torch.no_grad():
+                        enc = getattr(model, "enc", None)
+                        if enc is None:
+                            raise RuntimeError("can't find encoder!")
 
-                            # 通过 encoder 得到 P3 以及多层索引
-                            (P0_enc, F0), (P1, F1, idx1), (P2, F2, idx2), (P3, F3, idx3) = enc(P0_b3n)
+                        (P0_enc, F0), (P1, F1, idx1), (P2, F2, idx2), (P3, F3, idx3) = enc(P0_b3n)
 
-                            # P3: [B,3,N3] -> [B,N3,3]
-                            P3_bn3 = P3.permute(0, 2, 1).contiguous()
-                            _, N3, _ = P3_bn3.shape
-
-                            if N3 == 0:
-                                raise RuntimeError("encoder 输出的 P3 为空，无法进行无监督采样。")
-
-                            # 先在 P3 上选出索引 idx_p3 (大小 S_P3)，然后映射到 P0
-                            if N3 > max_points:
-                                # 在 P3 上做 FPS，若不可用则退化为随机
+                        if use_p2:
+                            P_target_bn3 = P2.permute(0, 2, 1).contiguous()  # [B,N2,3]
+                            _, N_target, _ = P_target_bn3.shape
+                            
+                            if N_target == 0:
+                                raise RuntimeError("encoder output P2 is empty")
+                            
+                            if N_target > max_points:
                                 if _p3d_sample_farthest_points is not None:
-                                    pts_1 = P3_bn3[:1]  # [1,N3,3]
+                                    pts_1 = P_target_bn3[:1]  # [1,N2,3]
                                     _, fps_idx = _p3d_sample_farthest_points(pts_1, K=max_points)
-                                    idx_p3 = fps_idx[0]
+                                    idx_p_target = fps_idx[0]
                                 else:
-                                    idx_p3 = torch.randperm(N3, device=P3_bn3.device)[:max_points]
+                                    idx_p_target = torch.randperm(N_target, device=P_target_bn3.device)[:max_points]
                             else:
-                                idx_p3 = torch.arange(N3, device=P3_bn3.device)
-
-                            # 构建 P3 -> P0 的映射：P1 = P0[idx1]，P2 = P1[idx2]，P3 = P2[idx3]
-                            # 只需 batch=0 的索引，然后共享到整个 batch（与原实现一致）
+                                idx_p_target = torch.arange(N_target, device=P_target_bn3.device)
+                            
+                            idx1_b = idx1[0]        # [N1]
+                            idx2_b = idx2[0]        # [N2]
+                            
+                            map1 = idx1_b                               # P1 -> P0
+                            map2 = map1[idx2_b]                          # P2 -> P0
+                            
+                            sel0 = map2[idx_p_target]                   
+                            sel = sel0.sort().values                     # [S]
+                        else:
+                            P_target_bn3 = P3.permute(0, 2, 1).contiguous()  # [B,N3,3]
+                            _, N_target, _ = P_target_bn3.shape
+                            
+                            if N_target == 0:
+                                raise RuntimeError("encoder output P3 is empty!")
+                            
+                            if N_target > max_points:
+                                if _p3d_sample_farthest_points is not None:
+                                    pts_1 = P_target_bn3[:1]  # [1,N3,3]
+                                    _, fps_idx = _p3d_sample_farthest_points(pts_1, K=max_points)
+                                    idx_p_target = fps_idx[0]
+                                else:
+                                    idx_p_target = torch.randperm(N_target, device=P_target_bn3.device)[:max_points]
+                            else:
+                                idx_p_target = torch.arange(N_target, device=P_target_bn3.device)
+                            
+                            # P3 -> P0:P1 = P0[idx1]，P2 = P1[idx2]，P3 = P2[idx3]
                             idx1_b = idx1[0]        # [N1]
                             idx2_b = idx2[0]        # [N2]
                             idx3_b = idx3[0]        # [N3]
-
+                            
                             map1 = idx1_b                               # P1 -> P0
                             map2 = map1[idx2_b]                          # P2 -> P0
-                            map3 = map2[idx3_b]                          # P3 -> P0，形状 [N3]
-
-                            sel0 = map3[idx_p3]                          # 选中的 P0 索引（未排序）
+                            map3 = map2[idx3_b]                          # P3 -> P0
+                            
+                            sel0 = map3[idx_p_target]                    
                             sel = sel0.sort().values                     # [S]
-                    else:
-                        # 在 P0 上直接做 FPS（或随机），不经过 encoder
-                        if _p3d_sample_farthest_points is not None:
-                            pts_1 = P0_bn3[:1]  # [1,N,3]
-                            _, fps_idx = _p3d_sample_farthest_points(pts_1, K=max_points)
-                            sel = fps_idx[0].sort().values
-                        else:
-                            sel = torch.randperm(N, device=P0_bn3.device)[:max_points]
-                            sel = sel.sort().values
 
-                # 2) 对子集做前向，得到子集偏移 offsets_sub
                 P0_sub_bn3 = P0_bn3[:, sel]                           # [B,S,3]
                 P0_sub_b3s = P0_sub_bn3.permute(0, 2, 1).contiguous() # [B,3,S]
                 offsets_sub = model(P0_sub_b3s)                        # [B,3,S]
 
-                # 3) 仅在子集中进行 kNN 和三角伪标签构建
                 Pp_sub_bn3 = P0_sub_b3s.permute(0, 2, 1).contiguous() + offsets_sub.permute(0, 2, 1).contiguous()  # [B,S,3]
                 dP_sub_bn3 = offsets_sub.permute(0, 2, 1).contiguous()                                              # [B,S,3]
 
-                # 以子集自身作为数据库，进一步降低内存使用
                 Q_bnc = Pp_sub_bn3  # queries [B,S,3]
                 P_bnc = Pp_sub_bn3  # database [B,S,3]
 
@@ -616,7 +618,7 @@ def run_step(
 
                 tri = getattr(model, 'tri', None)
                 if tri is None:
-                    raise RuntimeError("model 没有 tri 子模块，无法计算无监督三角损失。")
+                    raise RuntimeError("model don't have tri module, can't compute unsupervised loss.")
                 tri.eval()
                 chunk = max(1, int(args.chunk_size))
                 thresh = float(getattr(args, 'unsup_p1_thresh', 0.5))
@@ -634,7 +636,7 @@ def run_step(
                             total_pos += pos_cnt
                             total_elem += elem_cnt
                     if total_elem == 0:
-                        raise RuntimeError("未能生成无监督 logits，可能是子采样过小。")
+                        raise RuntimeError("can't compute logits.")
                     pos_weight = (total_elem - total_pos) / max(total_pos, 1) if total_pos > 0 else 1.0
                     loss_sum = None
                     pos_weight_tensor = None
@@ -674,7 +676,7 @@ def run_step(
                 cd_loss = torch.tensor(float('nan'), device=device)
                 unsup_val = unsup_loss.detach()
             else:
-                # 验证或监督训练（--sup）：计算 Chamfer + reg
+                # （--sup）：Chamfer + reg
                 offsets = model(P0_b3n)
                 pred = (P0_b3n + offsets).permute(0, 2, 1).contiguous()
                 cd_loss = chamfer_distance_batched(pred, gt_b1m3)
@@ -693,7 +695,6 @@ def run_step(
             total_loss.backward()
             optimizer.step()
 
-    # 训练阶段无监督时 cd_loss 为 NaN，占位；返回时仍提供字段但供上层跳过聚合
     cd_val = float(cd_loss.detach().cpu()) if cd_loss.numel() == 1 else float('nan')
     out = {
         "loss": float(total_loss.detach().cpu()),
@@ -728,7 +729,6 @@ def run_epoch(
     for batch_idx, batch in enumerate(iterator, start=1):
         metrics = run_step(model, batch, device, args, optimizer=optimizer, scaler=scaler, train=train)
         total_loss += metrics["loss"]
-        # 聚合 cd（跳过 NaN）
         try:
             if metrics.get("cd", float("nan")) == metrics.get("cd", float("nan")):
                 total_cd += metrics["cd"]
@@ -820,24 +820,17 @@ def main() -> None:
     parser.add_argument("--knn_chunk_size", type=int, default=0, help="Queries per knn_points call; 0 uses chunk_size")
     parser.add_argument("--knn", type=int, default=50)
     parser.add_argument("--Lembed", type=int, default=8)
-    # Ablation switch: q as feature
-    parser.add_argument("--disable_q_as_feat", dest="disable_q_as_feat", action="store_true", help="Do not concatenate q statistics into OffsetFormer features")
-    # Compatible with old name --disable_q_feat
-    parser.add_argument("--disable_q_feat", dest="disable_q_as_feat", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no_share_offset_former", action="store_true", help="Use distinct OffsetFormerCell parameters at each iteration instead of sharing")
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--min_delta", type=float, default=1e-4)
     parser.add_argument("--log_batches", action="store_true")
     parser.add_argument("--log_interval", type=int, default=30)
     parser.add_argument("--notes", type=str, default="")
-    # 无监督/监督开关（默认无监督）
     parser.add_argument("--unsup", dest="unsup", action="store_true")
     parser.add_argument("--sup", dest="unsup", action="store_false")
-    # 无监督伪标签阈值与两阶段开关（两阶段可选，默认单阶段即可）
     parser.add_argument("--unsup_p1_thresh", type=float, default=0.5)
     parser.add_argument("--unsup_two_pass", action="store_true")
     parser.add_argument("--unsup_max_points", type=int, default=10000)
-    parser.add_argument("--unsup_fps_on_p3", action="store_true", help="If set, do FPS on P3 then map back to P0; otherwise FPS directly on P0")
     parser.set_defaults(unsup=True)
 
     args = parser.parse_args()
@@ -934,7 +927,6 @@ def main() -> None:
                 best_val = val_crit
                 best_epoch = epoch
                 patience_counter = 0
-                # 在 checkpoint 中嵌入必要 meta（便于重建阶段读取 delta 等）
                 ckpt = {
                     "epoch": epoch,
                     "model_state_dict": model.state_dict(),

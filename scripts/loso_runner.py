@@ -54,7 +54,7 @@ def run_cmd(cmd, cwd=REPO_ROOT, env=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--data_root', type=str, default=str(Path.home() / 'autodl-tmp' / 'Data'))
+    parser.add_argument('--data_root', type=str, default=str(./ 'Data'))
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--train_script', type=str, default='S2/S2_train_loon_unet.py')

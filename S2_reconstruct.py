@@ -227,7 +227,8 @@ if __name__=='__main__':
         unet_k = int(_find_meta(['unet_k','encoder_k'], 32))
         unet_ratio1 = float(_find_meta(['unet_ratio1','ratio1'], 0.25))
         unet_ratio2 = float(_find_meta(['unet_ratio2','ratio2'], 0.25))
-        no_pyramid = bool(_find_meta(['no_pyramid'], False))
+        # Default to True to match training-time defaults when field is absent.
+        no_pyramid = bool(_find_meta(['no_pyramid'], True))
         # 从权重推断 hidden（优先）
         unet_hidden = int(_find_meta(['unet_hidden','hidden','hidden_dim'], 64))
         if isinstance(state, dict):
@@ -240,22 +241,8 @@ if __name__=='__main__':
                         pass
         unet_T = int(_find_meta(['unet_T'], 2))
         unet_K = int(_find_meta(['unet_K'], 50))
-        use_q_for_modulation = bool(_find_meta(['use_q_for_modulation', 'enable_quality_modulator'], True))
         use_q_as_feat = bool(_find_meta(['use_q_as_feat', 'enable_q_feat'], True))
         share_offset_former = bool(_find_meta(['share_offset_former'], True))
-        use_point_transformer = bool(_find_meta(['use_point_transformer'], False))
-        use_gat = bool(_find_meta(['use_gat'], False))
-        gat_heads = int(_find_meta(['gat_heads'], 4))
-        if isinstance(state, dict):
-            if any(k.startswith('bottleneck.pt_cell.') or k.startswith('bottleneck.offset_former.') or 'bottleneck.feature_proj.weight' in k for k in state.keys()):
-                use_point_transformer = True
-            if not use_point_transformer and any(k.startswith('bottleneck.gat_cell.') for k in state.keys()):
-                use_gat = True
-            if use_gat and 'bottleneck.gat_cell.lin_q.weight' in state:
-                try:
-                    in_dim = state['bottleneck.gat_cell.lin_q.weight'].shape[1]
-                except Exception:
-                    pass
 
         target_c4 = None
         if isinstance(state, dict) and 'enc.l4.conv.weight' in state:
@@ -277,23 +264,26 @@ if __name__=='__main__':
                     f_dim = int(state['enc.l4.conv.weight'].shape[0])
                 except Exception:
                     f_dim = 0
+        # Strict alignment with FastSESR's LoonBottleneck signature.
         bottleneck = LoonBottleneck(
             hidden=unet_hidden,
             T=unet_T,
             K=unet_K,
             chunk_size=max(1, int(opt.chunk_size)),
             f_dim=f_dim,
-            use_point_transformer=use_point_transformer,
-            use_gat=use_gat,
-            gat_heads=gat_heads,
             use_q_as_feat=use_q_as_feat,
-            use_q_for_modulation=use_q_for_modulation,
             share_offset_former=share_offset_former,
         ).to(device)
         model.eval()
         for p in model.parameters():
             p.requires_grad_(False)
-        loon_unet = LoonUNet(enc, bottleneck, model, no_pyramid=bool(no_pyramid)).to(device)
+
+        # Strict alignment with FastSESR's LoonUNet signature.
+        loon_unet = LoonUNet(enc, bottleneck, model).to(device)
+        try:
+            setattr(loon_unet, 'no_pyramid', bool(no_pyramid))
+        except Exception:
+            pass
 
         if isinstance(state, dict):
             try:
@@ -321,7 +311,7 @@ if __name__=='__main__':
                     print(f"[Error] Failed to load LOON-UNet weights even with strict=False: {e2}")
         try:
             delta_meta = _find_meta(['delta'], opt.delta)
-            print(f"[Info] Using LOON-UNet params: unet_k={unet_k}, no_pyramid={no_pyramid}, unet_ratio1={unet_ratio1}, unet_ratio2={unet_ratio2}, unet_hidden={unet_hidden}, unet_T={unet_T}, unet_K={unet_K}, f_dim={f_dim}, point_transformer={use_point_transformer}, gat={use_gat}, gat_heads={gat_heads}, use_q_as_feat={use_q_as_feat}, use_q_for_modulation={use_q_for_modulation}, share_offset_former={share_offset_former}, delta={delta_meta}")
+            print(f"[Info] Using LOON-UNet params: unet_k={unet_k}, no_pyramid={no_pyramid}, unet_ratio1={unet_ratio1}, unet_ratio2={unet_ratio2}, unet_hidden={unet_hidden}, unet_T={unet_T}, unet_K={unet_K}, f_dim={f_dim}, use_q_as_feat={use_q_as_feat}, share_offset_former={share_offset_former}, delta={delta_meta}")
         except Exception:
             pass
 

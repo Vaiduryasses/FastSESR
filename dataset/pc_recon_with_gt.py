@@ -10,9 +10,10 @@ import open3d as o3d
 
 class PCReconWithGT(Dataset):
     """
-    读取真实点云与匹配的 GT 网格（按同名 .ply 配对），并在同一中心/尺度下归一化两者。
-    - 点云位置将按 delta 体素降采样（与 PCReconSet 一致，可选 rescale_delta）。
-    - 返回 (points[N,3] Tensor, gt_vertices[M,3] Tensor)，两者均已基于点云的 center/scale 归一化。
+    Load real point clouds and their matching GT meshes (paired by same-name .ply),
+    and normalize both to the same center/scale.
+    - Point cloud positions will be voxel-downsampled by delta (same behavior as PCReconSet; optional rescale_delta).
+    - Returns (points[N,3] Tensor, gt_vertices[M,3] Tensor), both normalized using the point cloud's center/scale.
     """
 
     def __init__(self, data_root: str, dataset: str, delta: float = 0.01, rescale_delta: bool = False):
@@ -26,7 +27,7 @@ class PCReconWithGT(Dataset):
         gt_dir = os.path.join(self.data_root, 'GT_Meshes', self.dataset)
         self.pcloud_files: List[str] = sorted(glob.glob(os.path.join(pc_dir, '*.ply')))
 
-        # 构建同名 .ply 的 GT 路径，若不存在则跳过该样本
+        # Build matching GT .ply paths; skip samples if GT is missing
         pairs: List[Tuple[str, str]] = []
         for pc_path in self.pcloud_files:
             stem = os.path.splitext(os.path.basename(pc_path))[0]
@@ -49,7 +50,7 @@ class PCReconWithGT(Dataset):
     def __getitem__(self, idx: int):
         pc_path, gt_path = self.pairs[idx]
 
-        # 读点云并可选体素下采样
+        # Read point cloud and optionally voxel-downsample
         pcd = o3d.io.read_point_cloud(pc_path)
         pcd = pcd.remove_duplicated_points()
         if self.delta == 0:
@@ -64,17 +65,18 @@ class PCReconWithGT(Dataset):
             voxel_pcd = pcd.voxel_down_sample(voxel_size=float(voxel))
             pc_points = np.asarray(voxel_pcd.points)
 
-        # 以点云的包围盒中心/尺度为基准做归一化
+        # Normalize based on the point cloud's bounding box center/scale
         center, scale = self._center_scale(pc_points)
         pc_points_norm = (pc_points - center) / scale
 
-        # 读取 GT（网格或点云）并用相同的 center/scale 归一化
-        # 某些数据（如 CARLA_1M）GT 可能是无面的点云 .ply，直接按点云读取可避免 Open3D 的 TriangleMesh 警告
+        # Read GT (mesh or point cloud) and normalize with the same center/scale
+        # Some GTs (e.g., CARLA_1M) may be .ply point clouds without faces;
+        # reading them as point clouds avoids Open3D TriangleMesh warnings
         def _ply_has_faces(p: str) -> bool:
             try:
                 with open(p, 'r', encoding='utf-8', errors='ignore') as f:
                     for i, line in enumerate(f):
-                        if i > 100:  # 仅检查头部若干行
+                        if i > 100:  # only check the first few header lines
                             break
                         if line.startswith('element face'):
                             parts = line.strip().split()
@@ -86,11 +88,11 @@ class PCReconWithGT(Dataset):
 
         gt_vertices: np.ndarray
         if gt_path.lower().endswith('.ply') and not _ply_has_faces(gt_path):
-            # 无面：按点云读取
+            # No faces: read as point cloud
             gt_pc = o3d.io.read_point_cloud(gt_path)
             gt_vertices = np.asarray(gt_pc.points, dtype=np.float32)
         else:
-            # 有面或非 ply：按三角网格读取
+            # Has faces or non-ply: read as triangle mesh
             mesh = o3d.io.read_triangle_mesh(gt_path)
             try:
                 mesh.remove_duplicated_vertices()

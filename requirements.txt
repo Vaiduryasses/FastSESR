@@ -1,0 +1,11 @@
+numpy
+scipy
+tqdm
+scikit-learn
+matplotlib
+open3d
+trimesh
+pykdtree
+wandb
+gdown
+pytorch3d

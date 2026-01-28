@@ -3,7 +3,6 @@ import importlib
 try:
     from tqdm import tqdm
 except Exception:
-    # 简易回退：无 tqdm 时直接返回原迭代器
     def tqdm(iterable=None, total=None, desc=None, leave=True, unit=None, position=None):
         return iterable if iterable is not None else range(total or 0)
 import numpy as np
@@ -31,7 +30,7 @@ parser.add_argument('--dataset', type=str, default='ABC', help='Dataset name')
 parser.add_argument('--chunk_size', type=int, default=2000, help='Chunk size for logits/extraction')
 parser.add_argument('--loon_ckpt', type=str, default='', help='Path to LOON or LOON-UNet checkpoint (preferred)')
 parser.add_argument('--loon_unet_ckpt', type=str, default='', help='[Deprecated] Path to LOON-UNet checkpoint (used only if --loon_ckpt empty)')
-parser.add_argument('--data_root', type=str, default='/data/liujueqi/OffsetOPT_tg/Data', help='Root folder containing PointClouds/<dataset>')
+parser.add_argument('--data_root', type=str, default='./Data', help='Root folder containing PointClouds/<dataset>')
 parser.add_argument('--test_list', type=str, default='', help='Optional text file with list of pointcloud basenames (one per line) to reconstruct')
 parser.add_argument('--out_dir', type=str, default='', help='Optional output directory for reconstructed meshes (overrides results/<dataset>/)')
 parser.add_argument('--delta', type=float, default=None,help='Override surface voxel size delta used by PCReconSet; if set, overrides checkpoint meta')
@@ -77,12 +76,10 @@ if __name__=='__main__':
     # set opt.delta and opt.rescale_delta from meta if present, else defaults
     delta_meta = _find_meta_quick(['delta','voxel_size'], None)
     rescale_meta = _find_meta_quick(['rescale_delta'], False)
-    # 1) 如果用户通过 CLI 显式指定了 --delta，则直接使用该值
     cli_delta = getattr(opt, 'delta', None)
     if cli_delta is not None:
         setattr(opt, 'delta', float(cli_delta))
         print(f"[Recon] Using CLI delta override: delta={float(cli_delta)}")
-    # 2) 否则，若 ckpt meta 中存在 delta，则采用 ckpt 中的设置
     elif delta_meta is not None:
         setattr(opt, 'delta', float(delta_meta))
         print(f"[Recon] Using checkpoint delta from meta: delta={float(delta_meta)}")
@@ -92,7 +89,6 @@ if __name__=='__main__':
         print('[Warn] No delta found in CLI or checkpoint meta; falling back to default delta=0.01')
     setattr(opt, 'rescale_delta', bool(rescale_meta))
 
-    # (Info printing moved to after checkpoint load per user request)
 
     # hyper-parameter configurations
     dim, Lembed = 3, 8
@@ -135,7 +131,6 @@ if __name__=='__main__':
                               
     # config model, loss function, and load the trained model
     loss_fn = ReconLoss()
-    # 严格从 checkpoint 中提取模型权重，并根据其中是否存在 lowrank 参数来决定是否走 lowrank 路径
     _ckpt_path = os.path.join('trained_models', 'model_knn50.pth')
     ckpt_obj = torch.load(_ckpt_path, map_location=device)
     if isinstance(ckpt_obj, dict):
@@ -147,11 +142,9 @@ if __name__=='__main__':
             state_dict = ckpt_obj
     else:
         state_dict = ckpt_obj
-    # 去掉可能的 DataParallel 前缀
     if isinstance(state_dict, dict):
         state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
 
-    # 1) 根据 ckpt 是否包含 lowrank 相关参数，自动决定是否启用 lowrank 结构
     use_pair_lowrank = False
     pair_rank = 32
     if isinstance(state_dict, dict) and 'pair_u.weight' in state_dict:
@@ -159,14 +152,11 @@ if __name__=='__main__':
         try:
             w = state_dict['pair_u.weight']
             if hasattr(w, 'shape') and len(w.shape) >= 2:
-                # pair_u: Linear(embed_dim, pair_rank) -> weight.shape = [pair_rank, embed_dim]
-                # 因此秩应当取第 0 维，而不是第 1 维
                 pair_rank = int(w.shape[0])
         except Exception:
             pass
         print(f"[Recon][S2ReconNet] Detected lowrank checkpoint: use_pair_lowrank=True, pair_rank={pair_rank}")
 
-    # 2) 构建与 ckpt 结构匹配的 S2ReconNet（包括是否使用 lowrank 路径）
     model = S2ReconNet(
         Cin=Cin,
         knn=knn,
@@ -175,7 +165,6 @@ if __name__=='__main__':
         pair_rank=pair_rank,
     ).to(device)
 
-    # 3) 对比 ckpt 和当前模型 key；允许 ckpt 有“冗余”参数，但不允许缺 key
     if isinstance(state_dict, dict):
         own = model.state_dict()
         own_keys = list(own.keys())
@@ -190,19 +179,14 @@ if __name__=='__main__':
                 print("  Missing (first 20):\n    " + "\n    ".join(head_miss))
             if head_unexp:
                 print("  Unexpected (first 20):\n    " + "\n    ".join(head_unexp))
-        # 丢弃所有在当前模型中不存在的 key（旧 ckpt 冗余参数等），
-        # 但若存在真正缺失的 key，则仍然报错，保证结构不被悄悄改变。
         for k in unexpected_keys:
             state_dict.pop(k, None)
         if missing_keys:
             raise RuntimeError("S2ReconNet checkpoint is missing required parameters; please check that the architecture matches.")
 
-    # 4) 此时 state_dict 与模型参数一一对应，可安全使用 strict=True
     model.load_state_dict(state_dict)
 
-    # 选择优化方案：OffsetOPT、LOON 或 LOON-UNet
     if opt.use_loon_unet:
-        # 使用 LOON-UNet：构建编码器/瓶颈/解码器并冻结三角网络
         try:
             mod_unet = importlib.import_module('S2.LoonUNet')
         except Exception:
@@ -214,10 +198,8 @@ if __name__=='__main__':
         LoonBottleneck = getattr(mod_unet, 'LoonBottleneck')
         LoonUNet = getattr(mod_unet, 'LoonUNet')
 
-        # 先确定 ckpt 路径（仅使用 --loon_unet_ckpt）
         ckpt_path = getattr(opt, 'loon_unet_ckpt', '')
 
-        # 读取 ckpt 以获取权重与可能的超参数
         raw_ckpt, state = None, None
         if ckpt_path and os.path.isfile(ckpt_path):
             try:
@@ -229,7 +211,6 @@ if __name__=='__main__':
             if ckpt_path:
                 print(f"[Warn] LOON-UNet checkpoint not found at {ckpt_path}. Using random init.")
 
-        # 从 ckpt 元信息或权重形状推断超参数
         def _extract_meta_dicts(obj):
             metas = []
             if isinstance(obj, dict):
@@ -237,7 +218,6 @@ if __name__=='__main__':
                     if k in obj and isinstance(obj[k], dict):
                         metas.append(obj[k])
             return metas
-        # 仅从 ckpt 内部读取元信息/超参（不再读取 args.json）
         meta_dicts = _extract_meta_dicts(raw_ckpt) if isinstance(raw_ckpt, dict) else []
         def _find_meta(keys, default=None):
             for md in meta_dicts:
@@ -245,7 +225,6 @@ if __name__=='__main__':
                     if k in md:
                         return md[k]
             return default
-        # 默认值（若 ckpt 未提供） — 注意：全部保持在 if 分支正确缩进
         unet_k = int(_find_meta(['unet_k','encoder_k'], 32))
         unet_ratio1 = float(_find_meta(['unet_ratio1','ratio1'], 0.25))
         unet_ratio2 = float(_find_meta(['unet_ratio2','ratio2'], 0.25))
@@ -262,31 +241,23 @@ if __name__=='__main__':
                         pass
         unet_T = int(_find_meta(['unet_T'], 2))
         unet_K = int(_find_meta(['unet_K'], 50))
-        # Ablation flags: default True if absent (old checkpoints)
         use_q_for_modulation = bool(_find_meta(['use_q_for_modulation', 'enable_quality_modulator'], True))
         use_q_as_feat = bool(_find_meta(['use_q_as_feat', 'enable_q_feat'], True))
         share_offset_former = bool(_find_meta(['share_offset_former'], True))
-        # 分支开关: 从 meta 或 state_dict 关键键自动检测 point_transformer / gat
         use_point_transformer = bool(_find_meta(['use_point_transformer'], False))
         use_gat = bool(_find_meta(['use_gat'], False))
         gat_heads = int(_find_meta(['gat_heads'], 4))
         if isinstance(state, dict):
-            # 如果 state 中存在 pt_cell 或 offset_former 相关权重则强制开启 point_transformer
             if any(k.startswith('bottleneck.pt_cell.') or k.startswith('bottleneck.offset_former.') or 'bottleneck.feature_proj.weight' in k for k in state.keys()):
                 use_point_transformer = True
-            # 如果存在 gat_cell 权重且未开启 point_transformer（pt 优先级更高）则开启 gat
             if not use_point_transformer and any(k.startswith('bottleneck.gat_cell.') for k in state.keys()):
                 use_gat = True
-            # 尝试从注意力层尺寸推断 gat_heads（若未在 meta 中给出）
             if use_gat and 'bottleneck.gat_cell.lin_q.weight' in state:
                 try:
                     in_dim = state['bottleneck.gat_cell.lin_q.weight'].shape[1]
-                    # 不能可靠推断 heads，仅保留 meta 中或默认值
                 except Exception:
                     pass
 
-        # 构建编码器/瓶颈/解码器
-        # 若 ckpt encoder 顶层通道数与默认不同，则以该值重建 c4
         target_c4 = None
         if isinstance(state, dict) and 'enc.l4.conv.weight' in state:
             try:
@@ -301,7 +272,6 @@ if __name__=='__main__':
         try:
             f_dim = int(getattr(getattr(enc, 'l4'), 'conv').out_channels)
         except Exception:
-            # 也尝试从 ckpt 权重中推断 f_dim
             f_dim = 0
             if isinstance(state, dict) and 'enc.l4.conv.weight' in state:
                 try:
@@ -321,14 +291,11 @@ if __name__=='__main__':
             use_q_for_modulation=use_q_for_modulation,
             share_offset_former=share_offset_former,
         ).to(device)
-        # 冻结三角网络参数
         model.eval()
         for p in model.parameters():
             p.requires_grad_(False)
-        # 构建新版 LoonUNet（不再需要 DecoderHead 参数）
         loon_unet = LoonUNet(enc, bottleneck, model, no_pyramid=bool(no_pyramid)).to(device)
 
-        # 加载权重
         if isinstance(state, dict):
             try:
                 loon_unet.load_state_dict(state)
@@ -337,7 +304,6 @@ if __name__=='__main__':
                 print(f"[Warn] Strict load failed: {e}\n       Falling back to strict=False...")
                 try:
                     missing, unexpected = loon_unet.load_state_dict(state, strict=False)
-                    # 如果仅缺少质量调制器(q_mod)相关权重，且 ckpt 显示已关闭该模块，则降低为信息提示
                     enable_qm = bool(_find_meta(['use_q_for_modulation', 'enable_quality_modulator'], True))
                     only_qm_missing = False
                     if missing:
@@ -354,15 +320,12 @@ if __name__=='__main__':
                         print(f"[Warn] unexpected keys: {len(unexpected)} (show up to 10): {unexpected[:10]}")
                 except Exception as e2:
                     print(f"[Error] Failed to load LOON-UNet weights even with strict=False: {e2}")
-
-        # 打印用于推理的 LOON-UNet 超参数（delta 优先使用 ckpt 内部的）
         try:
             delta_meta = _find_meta(['delta'], opt.delta)
             print(f"[Info] Using LOON-UNet params: unet_k={unet_k}, no_pyramid={no_pyramid}, unet_ratio1={unet_ratio1}, unet_ratio2={unet_ratio2}, unet_hidden={unet_hidden}, unet_T={unet_T}, unet_K={unet_K}, f_dim={f_dim}, point_transformer={use_point_transformer}, gat={use_gat}, gat_heads={gat_heads}, use_q_as_feat={use_q_as_feat}, use_q_for_modulation={use_q_for_modulation}, share_offset_former={share_offset_former}, delta={delta_meta}")
         except Exception:
             pass
 
-        # 打印关键参数快照（可选）
         try:
             print("[Info] LOON-UNet parameter snapshot:")
             try:
@@ -408,7 +371,6 @@ if __name__=='__main__':
         loon = None
         loon_unet = None
     else:
-        # 使用 LOON 优化器：三角网络被冻结，LOON 学习到的单元用于生成 offsets
         try:
             mod = importlib.import_module('S2.LOONOptimizer')
         except Exception:
@@ -417,7 +379,6 @@ if __name__=='__main__':
             except Exception as e:
                 raise ImportError("Could not import LOONOptimizer. Ensure 'S2' is a package and PYTHONPATH includes project root.") from e
         _LOON = getattr(mod, 'LOONOptimizer')
-        # 从 LOON ckpt 提取或回退默认值
         loon_hidden = 64
         loon_T = 20
         loon_k = 50
@@ -429,7 +390,6 @@ if __name__=='__main__':
                 state = raw_ckpt['model_state_dict'] if isinstance(raw_ckpt, dict) and 'model_state_dict' in raw_ckpt else raw_ckpt
             except Exception as e:
                 print(f"[Warn] Failed to load LOON checkpoint file {ckpt_path}: {e}")
-        # 提取元信息
         def _extract_meta_dicts(obj):
             metas = []
             if isinstance(obj, dict):
@@ -449,12 +409,10 @@ if __name__=='__main__':
         loon_k = int(_find_meta(['loon_k','k'], loon_k) or loon_k)
 
         loon = _LOON(hidden_dim=loon_hidden, T=loon_T, k=loon_k).to(device)
-        # 复用 CLI 的 chunk_size 给 LOON 内部的 triangle_net 分块前向
         try:
             setattr(loon, 'chunk_size', int(opt.chunk_size))
         except Exception:
             pass
-        # 加载 LOON 的 checkpoint
         if state:
             try:
                 missing, unexpected = loon.load_state_dict(state, strict=False)
@@ -472,7 +430,6 @@ if __name__=='__main__':
         loon.eval()
         for p in loon.parameters():
             p.requires_grad_(False)
-        # 针对部分大规模/真实数据集，推荐：固定一次 KNN 顺序 + 在 CPU 上构建 KNN，提升稳定性与降低显存峰值
         try:
             fixed_knn_sets = {"ScanNet", "CARLA_1M", "Thingi10k"}
             cpu_knn_sets = {"ScanNet", "Thingi10k", "CARLA_1M", "Matterport3D", "Stanford3D"}
@@ -482,16 +439,13 @@ if __name__=='__main__':
                 setattr(loon, 'knn_on_cpu', True)
         except Exception:
             pass
-        # 冻结三角网络参数
         model.eval()
         for p in model.parameters():
             p.requires_grad_(False)
         OffsetOPTer = None
         loon_unet = None
     runtime = np.zeros(len(test_files))
-    # 记录每个样本的点数
     point_counts = np.zeros(len(test_files), dtype=np.int64)
-    # 文本日志：每个样本的点数与重建时间
     stats_file = None
     stats_path = os.path.join(results_folder, 'reconstruction_stats.txt')
     try:
@@ -505,7 +459,6 @@ if __name__=='__main__':
     for data in testLoader:
         data = [item[0] for item in data]
         points, knn_indices, center, scale = data
-        # 当前样本点数
         try:
             num_points = int(points.shape[0])
         except Exception:
@@ -517,14 +470,12 @@ if __name__=='__main__':
             point_counts[idx] = num_points
         start_time = time()
         if opt.use_loon_unet:
-            # 1) 使用 LOON-UNet 生成最终 offsets
             points_dev = points.to(device)
             P0_b3n = points_dev.t().unsqueeze(0).contiguous()   # [1,3,N]
             with torch.no_grad():
                 dP0_b3n = loon_unet(P0_b3n)                     # [1,3,N]
             final_offsets = dP0_b3n.squeeze(0).t().contiguous() # [N,3]
 
-            # 2) 分块计算 logits 并提取三角形，避免一次性显存爆炸
             knn_idx_dev = knn_indices.to(device)
             extractor = SurfExtract()
             N_total = points_dev.shape[0]
@@ -555,12 +506,9 @@ if __name__=='__main__':
         elif not opt.use_loon:
             recon_mesh = OffsetOPTer(points, knn_indices, center, scale, req_inter_logits=False)
         else:
-            # 1) 使用 LOON 生成最终 offsets
             points_dev = points.to(device)
-            # 推理阶段禁用高阶图，显著降低显存占用
             final_offsets = loon(points_dev, model, create_graph=False)  # [N, 3]
 
-            # 2) 分块计算 logits 并提取三角形，避免一次性显存爆炸
             knn_idx_dev = knn_indices.to(device)
             extractor = SurfExtract()
             N_total = points_dev.shape[0]
@@ -589,7 +537,6 @@ if __name__=='__main__':
             mesh.triangles = o3d.utility.Vector3iVector(tris_np) if tris_np is not None else o3d.utility.Vector3iVector([])
             recon_mesh = mesh
         runtime[idx] = time()-start_time
-        # 将当前样本的点数与重建时间写入日志文本
         try:
             if stats_file is not None:
                 fname_log = os.path.basename(test_files[idx]) if idx < len(test_files) else f"file_{idx}"
@@ -597,7 +544,6 @@ if __name__=='__main__':
                 stats_file.flush()
         except Exception:
             pass
-        # 进度条更新与后缀
         try:
             method = 'LOON-UNet' if opt.use_loon_unet else ('LOON' if opt.use_loon else 'OffsetOPT')
             pbar.set_postfix({"time": f"{runtime[idx]:.2f}s", "method": method})
@@ -605,7 +551,6 @@ if __name__=='__main__':
             pass
         pbar.update(1)
 
-        # 安全写出：如果没有三角形，则写点云以避免 Open3D 的 TriangleMesh 警告
         out_path = os.path.join(results_folder, '%s'%test_files[idx].split('/')[-1])
         try:
             has_tris = (hasattr(recon_mesh, 'triangles') and len(recon_mesh.triangles) > 0)
@@ -614,7 +559,6 @@ if __name__=='__main__':
         if has_tris:
             o3d.io.write_triangle_mesh(out_path, recon_mesh)
         else:
-            # 将顶点导出为点云（使用相同文件名加后缀），并提示
             pc = o3d.geometry.PointCloud(recon_mesh.vertices)
             pc_out = out_path.replace('.ply', '_pc.ply') if out_path.lower().endswith('.ply') else (out_path + '.pc.ply')
             o3d.io.write_point_cloud(pc_out, pc)
@@ -624,15 +568,12 @@ if __name__=='__main__':
         pbar.close()
     except Exception:
         pass
-    # 关闭统计文件
     try:
         if stats_file is not None:
             stats_file.close()
             print(f"[Info] Wrote per-file stats to {stats_path}")
     except Exception:
         pass
-
-    # 计算并记录平均耗时（仅统计已处理的文件数）
     try:
         n_done = idx
         if n_done > 0:
@@ -640,7 +581,6 @@ if __name__=='__main__':
         else:
             avg_time = 0.0
         print(f"[Info] Reconstructed {n_done} files. Average time per file: {avg_time:.2f}s")
-        # 统计点数最多的样本及其重建时间
         max_points = None
         max_points_time = None
         max_points_file = None
@@ -654,7 +594,6 @@ if __name__=='__main__':
                 print(f"[Info] Max points sample: {max_points_file}, num_points={max_points}, time={max_points_time:.2f}s")
             except Exception as _e_max:
                 print(f"[Warn] Failed to compute max points statistics: {_e_max}")
-        # 写入简单的 timings 文件，便于后续分析
         try:
             timings_path = os.path.join(results_folder, 'timings.txt')
             with open(timings_path, 'w') as f:

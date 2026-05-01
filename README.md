@@ -1,4 +1,4 @@
-# FastSESR: Fast Scene-level Explicit Surface Reconstruction
+# [ICML 2026] FastSESR: Fast Scene-level Explicit Surface Reconstruction
 
 <img src="./framework.png" alt="picture" width="1000"/>
 

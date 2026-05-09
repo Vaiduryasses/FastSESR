@@ -4,6 +4,10 @@
 
 FastSESR is a point cloud surface reconstruction framework that employs a two-stage  training strategy to efficiently reconstruct meshes from point clouds. The project supports multiple datasets and provides complete training, evaluation, and reconstruction pipelines.
 
+## 📢 Updates
+
+- 2026/05/02：我们的论文已被 ICML 接收
+
 ## 🛠 Environment Setup
 
 ### 1. Create Conda Virtual Environment
@@ -217,4 +221,3 @@ python S2_reconstruct.py --use_loon_unet --loon_unet_ckpt runs/S2_train/<TIME>/m
 ## 🙏 Acknowledgements
 
 This project is based on the work of [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) (CVPR 2025). We thank the authors for providing the datasets and baseline implementation.
-

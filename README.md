@@ -4,6 +4,10 @@
 
 FastSESR is a point cloud surface reconstruction framework that employs a two-stage  training strategy to efficiently reconstruct meshes from point clouds. The project supports multiple datasets and provides complete training, evaluation, and reconstruction pipelines.
 
+## News
+
+- **2026/05/02**: Our paper has been accepted by **ICML 2026**.
+
 ## 🛠 Environment Setup
 
 ### 1. Create Conda Virtual Environment

@@ -6,6 +6,7 @@ FastSESR is a point cloud surface reconstruction framework that employs a two-st
 
 ## 📢 News
 
+- 🚀 **2026/05/11**: We have released our dataset on [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets). See [Dataset Preparation](#-dataset-preparation) for download instructions.
 - 🎉 **2026/05/02**: Our paper has been accepted by **ICML 2026**.
 
 ## 🛠 Environment Setup
@@ -78,15 +79,35 @@ Data/
 
 ### Dataset Download
 
-The pre-processed datasets can be obtained from the [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) repository (CVPR 2025).
+We provide pre-processed datasets on **HuggingFace**. You can download them using any of the methods below:
+
+**Method 1: huggingface-cli (Recommended)**
+```bash
+huggingface-cli download Vaiduryassess/fastsesr-datasets --repo-type dataset --local-dir ./Data
+```
+
+**Method 2: Python**
+```python
+from huggingface_hub import snapshot_download
+snapshot_download(repo_id="Vaiduryassess/fastsesr-datasets", repo_type="dataset", local_dir="./Data")
+```
+
+**Method 3: Git**
+```bash
+git lfs install
+git clone https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets
+```
 
 | Dataset | Description | Source |
 |---------|-------------|--------|
-| **ABC** | CAD model dataset for S1 training | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
-| **FAUST** | Human body scan dataset | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
-| **MGN** | Multi-garment human dataset | [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) |
+| **ABC** | CAD model dataset for S1 training | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
+| **FAUST** | Human body scan dataset | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
+| **MGN** | Multi-garment human dataset | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
+| **ScanNet** | Indoor scene dataset | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
+| **Matterport3D** | Large-scale indoor scene dataset | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
+| **CARLA_1M** | Outdoor scene dataset | [HuggingFace](https://huggingface.co/datasets/Vaiduryassess/fastsesr-datasets) |
 
-Please refer to the OffsetOPT repository for detailed download instructions and data preparation guidelines. Note that you should replace CARLA with CARLA_1M in GT_Meshes
+Note that you should replace CARLA with CARLA_1M in GT_Meshes.
 
 ---
 ## 🚀 Training
@@ -159,7 +180,7 @@ python scripts/kfold_runner.py   --dataset CARLA_1M   --data_root ./Data   --epo
 #Matterport3D
 python scripts/kfold_runner.py   --dataset Matterport3D   --data_root ./Data   --epochs 30   --gpu <GPU>   --use_loon_unet   --extra_train_args " --unet_k 16 --unsup --unsup_max_points 20000 --chunk_size 3000 --unet_T 2 --delta 0.1"
 #ScanNet
-python3 scripts/kfold_runner.py   --dataset ScanNet   --data_root ./Data   --epochs 30   --gpu <GPU>   --use_loon_unet   --extra_train_args " --unet_k 16 --unsup --unsup_max_points 20000 --chunk_size 3000 --unet_T 2 --delta 0.02”
+python3 scripts/kfold_runner.py   --dataset ScanNet   --data_root ./Data   --epochs 30   --gpu <GPU>   --use_loon_unet   --extra_train_args " --unet_k 16 --unsup --unsup_max_points 20000 --chunk_size 3000 --unet_T 2 --delta 0.02"
 ```
 
 ---
@@ -221,4 +242,3 @@ python S2_reconstruct.py --use_loon_unet --loon_unet_ckpt runs/S2_train/<TIME>/m
 ## 🙏 Acknowledgements
 
 This project is based on the work of [OffsetOPT](https://github.com/EnyaHermite/OffsetOPT) (CVPR 2025). We thank the authors for providing the datasets and baseline implementation.
-
